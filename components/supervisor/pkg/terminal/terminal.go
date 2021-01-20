@@ -6,11 +6,11 @@ package terminal
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,7 +48,7 @@ func (m *Mux) Start(cmd *exec.Cmd, options TermOptions) (alias string, err error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	pty, err := pty.Start(cmd)
+	pty, err := pty.StartWithSize(cmd, options.Size)
 	if err != nil {
 		return "", xerrors.Errorf("cannot start PTY: %w", err)
 	}
@@ -111,12 +111,12 @@ func (m *Mux) CloseTerminal(alias string, gracePeriod time.Duration) error {
 func (m *Mux) doClose(alias string, gracePeriod time.Duration) error {
 	term, ok := m.terms[alias]
 	if !ok {
-		return fmt.Errorf("not found")
+		return ErrNotFound
 	}
 
 	log := log.WithField("alias", alias)
 	log.Info("closing terminal")
-	err := gracefullyShutdownProcess(term.Command.Process, gracePeriod)
+	err := term.gracefullyShutdownProcess(gracePeriod)
 	if err != nil {
 		log.WithError(err).Warn("did not gracefully shut down terminal")
 	}
@@ -133,22 +133,22 @@ func (m *Mux) doClose(alias string, gracePeriod time.Duration) error {
 	return nil
 }
 
-func gracefullyShutdownProcess(p *os.Process, gracePeriod time.Duration) error {
-	if p == nil {
+func (term *Term) gracefullyShutdownProcess(gracePeriod time.Duration) error {
+	if term.Command.Process == nil {
 		// process is alrady gone
 		return nil
 	}
 	if gracePeriod == 0 {
-		return p.Kill()
+		return term.shutdownProcessImmediate()
 	}
 
-	err := p.Signal(unix.SIGTERM)
+	err := term.Command.Process.Signal(unix.SIGTERM)
 	if err != nil {
 		return err
 	}
-	schan := make(chan error)
+	schan := make(chan error, 1)
 	go func() {
-		_, err := p.Wait()
+		_, err := term.Wait()
 		schan <- err
 	}()
 	select {
@@ -161,7 +161,15 @@ func gracefullyShutdownProcess(p *os.Process, gracePeriod time.Duration) error {
 	}
 
 	// process did not exit in time. Let's kill.
-	return p.Kill()
+	return term.shutdownProcessImmediate()
+}
+
+func (term *Term) shutdownProcessImmediate() error {
+	err := term.Command.Process.Kill()
+	if err != nil && !strings.Contains(err.Error(), "os: process already finished") {
+		return err
+	}
+	return nil
 }
 
 // terminalBacklogSize is the number of bytes of output we'll store in RAM for each terminal.
@@ -209,6 +217,9 @@ type TermOptions struct {
 
 	// Annotations are user-defined metadata that's attached to a terminal
 	Annotations map[string]string
+
+	// Size describes the terminal size.
+	Size *pty.Winsize
 }
 
 // Term is a pseudo-terminal
@@ -244,8 +255,12 @@ type multiWriter struct {
 	recorder *RingBuffer
 }
 
-// ErrReadTimeout happens when a listener takes too long to read
-var ErrReadTimeout = errors.New("read timeout")
+var (
+	// ErrNotFound means the terminal was not found
+	ErrNotFound = errors.New("not found")
+	// ErrReadTimeout happens when a listener takes too long to read
+	ErrReadTimeout = errors.New("read timeout")
+)
 
 type multiWriterListener struct {
 	io.Reader
