@@ -17,7 +17,6 @@ require (
 	github.com/alecthomas/repr v0.0.0-20200325044227-4184120f674c
 	github.com/containerd/cgroups v0.0.0-20200824123100-0b889c03f102 // indirect
 	github.com/containerd/containerd v1.4.1
-	github.com/containerd/continuity v0.0.0-20200928162600-f2cc35102c2a // indirect
 	github.com/containerd/fifo v0.0.0-20200410184934-f15a3290365b // indirect
 	github.com/containerd/go-runc v0.0.0-20200930051345-7c5957f67ef4 // indirect
 	github.com/containerd/ttrpc v1.0.2 // indirect
@@ -44,7 +43,7 @@ require (
 	github.com/spf13/cobra v0.0.3
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
 	go.etcd.io/bbolt v1.3.5 // indirect
-	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
+	golang.org/x/sys v0.0.0-20201201145000-ef89a241ccb3
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/grpc v1.34.0

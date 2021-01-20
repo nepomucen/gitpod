@@ -11,6 +11,9 @@ replace github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0 /
 
 require (
 	cloud.google.com/go/storage v1.10.0
+	github.com/containerd/continuity v0.0.0-20201208142359-180525291bb7 // indirect
+	github.com/docker/docker v1.13.1
+	github.com/docker/go-units v0.4.0 // indirect
 	github.com/gitpod-io/gitpod/common-go v0.0.0-00010101000000-000000000000
 	github.com/gitpod-io/gitpod/content-service/api v0.0.0-00010101000000-000000000000
 	github.com/go-ozzo/ozzo-validation v3.5.0+incompatible
@@ -20,8 +23,9 @@ require (
 	github.com/minio/minio-go/v6 v6.0.34
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
+	github.com/opencontainers/runc v0.1.1 // indirect
 	github.com/opentracing/opentracing-go v1.1.0
-	github.com/sirupsen/logrus v1.4.2
+	github.com/sirupsen/logrus v1.6.0
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/api v0.32.0

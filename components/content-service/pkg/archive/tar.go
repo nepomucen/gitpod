@@ -5,11 +5,13 @@
 package archive
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
@@ -18,18 +20,18 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type buildTarbalConfig struct {
+type tarConfig struct {
 	MaxSizeBytes int64
 	UIDMaps      []idtools.IDMap
 	GIDMaps      []idtools.IDMap
 }
 
 // BuildTarbalOption configures the tarbal creation
-type BuildTarbalOption func(o *buildTarbalConfig)
+type TarOption func(o *tarConfig)
 
 // TarbalMaxSize limits the size of a tarbal
-func TarbalMaxSize(n int64) BuildTarbalOption {
-	return func(o *buildTarbalConfig) {
+func TarbalMaxSize(n int64) TarOption {
+	return func(o *tarConfig) {
 		o.MaxSizeBytes = n
 	}
 }
@@ -42,8 +44,8 @@ type IDMapping struct {
 }
 
 // WithUIDMapping reverses the given user ID mapping during archive creation
-func WithUIDMapping(mappings []IDMapping) BuildTarbalOption {
-	return func(o *buildTarbalConfig) {
+func WithUIDMapping(mappings []IDMapping) TarOption {
+	return func(o *tarConfig) {
 		o.UIDMaps = make([]idtools.IDMap, len(mappings))
 		for i, m := range mappings {
 			o.UIDMaps[i] = idtools.IDMap{
@@ -56,8 +58,8 @@ func WithUIDMapping(mappings []IDMapping) BuildTarbalOption {
 }
 
 // WithGIDMapping reverses the given user ID mapping during archive creation
-func WithGIDMapping(mappings []IDMapping) BuildTarbalOption {
-	return func(o *buildTarbalConfig) {
+func WithGIDMapping(mappings []IDMapping) TarOption {
+	return func(o *tarConfig) {
 		o.GIDMaps = make([]idtools.IDMap, len(mappings))
 		for i, m := range mappings {
 			o.GIDMaps[i] = idtools.IDMap{
@@ -69,9 +71,65 @@ func WithGIDMapping(mappings []IDMapping) BuildTarbalOption {
 	}
 }
 
+// ExtractTarbal extracts an OCI compatible tar file src to the folder dst, expecting the overlay whiteout format
+func ExtractTarbal(ctx context.Context, src io.Reader, dst string, opts ...TarOption) (err error) {
+	var cfg tarConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	//nolint:staticcheck,ineffassign
+	span, ctx := opentracing.StartSpanFromContext(ctx, "extractTarbal")
+	span.LogKV("src", src, "dst", dst)
+	defer tracing.FinishSpan(span, &err)
+
+	re, wr := io.Pipe()
+	src = io.TeeReader(src, wr)
+	tarReader := tar.NewReader(re)
+	type Info struct {
+		UID, GID int
+	}
+	m := make(map[string]Info)
+	go func() {
+		for {
+			hdr, err := tarReader.Next()
+			if err == io.EOF {
+				break
+			}
+			m[hdr.Name] = Info{
+				UID: hdr.Uid,
+				GID: hdr.Gid,
+			}
+		}
+	}()
+
+	tarcmd := exec.Command("tar", "x")
+	tarcmd.Dir = dst
+	tarcmd.Stdin = src
+
+	msg, err := tarcmd.CombinedOutput()
+	if err != nil {
+		return xerrors.Errorf("tar %s: %s", dst, err.Error()+";"+string(msg))
+	}
+	for k, v := range m {
+		os.Chown(k, toContainerId(v.UID, cfg.UIDMaps), toContainerId(v.GID, cfg.GIDMaps))
+	}
+	return nil
+}
+
+func toContainerId(hostID int, idMap []idtools.IDMap) int {
+	for _, m := range idMap {
+		if (hostID >= m.HostID) && (hostID <= (m.HostID + m.Size - 1)) {
+			contID := m.ContainerID + (hostID - m.HostID)
+			return contID
+		}
+	}
+	return hostID
+}
+
 // BuildTarbal creates an OCI compatible tar file dst from the folder src, expecting the overlay whiteout format
-func BuildTarbal(ctx context.Context, src string, dst string, opts ...BuildTarbalOption) (err error) {
-	var cfg buildTarbalConfig
+func BuildTarbal(ctx context.Context, src string, dst string, opts ...TarOption) (err error) {
+	var cfg tarConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
